@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	_ "github.com/coocood/mysql"
-	"github.com/coocood/qbs"
+	"github.com/echa/qbs"
 	"net/http"
 	"time"
 )
