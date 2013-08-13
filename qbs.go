@@ -22,10 +22,12 @@ var stmtMap map[string]*sql.Stmt
 var mu *sync.RWMutex
 var queryLogger *log.Logger = log.New(os.Stdout, "qbs:", log.LstdFlags)
 var errorLogger *log.Logger = log.New(os.Stderr, "qbs:", log.LstdFlags)
+var schema string
 
 type Qbs struct {
 	Dialect      Dialect
 	Log          bool //Set to true to print out sql statement.
+	schema       string
 	tx           *sql.Tx
 	txStmtMap    map[string]*sql.Stmt
 	criteria     *criteria
@@ -34,6 +36,15 @@ type Qbs struct {
 
 type Validator interface {
 	Validate(*Qbs) error
+}
+
+// set a schema (supported by PostgreSQL)
+func SetDefaultSchema(s string) {
+	schema = strings.TrimSuffix(s, ".") + "."
+}
+
+func GetDefaultSchema() string {
+	return schema
 }
 
 //Register a database, should be call at the beginning of the application.
@@ -92,6 +103,7 @@ func GetQbs() (q *Qbs, err error) {
 	q = new(Qbs)
 	q.Dialect = dial
 	q.criteria = new(criteria)
+	q.schema = schema
 	return q, nil
 }
 
@@ -114,6 +126,15 @@ func SetConnectionLimit(maxCon int, blocking bool) {
 		connectionLimit = nil
 	}
 	blockingOnLimit = blocking
+}
+
+// set a schema (supported by PostgreSQL)
+func (q *Qbs) SetSchema(s string) {
+	q.schema = strings.TrimSuffix(s, ".") + "."
+}
+
+func (q *Qbs) GetSchema() string {
+	return q.schema
 }
 
 // Create a new criteria for subsequent query
@@ -240,7 +261,7 @@ func (q *Qbs) OmitJoin() *Qbs {
 // the values obtained by the query.
 // If not found, "sql.ErrNoRows" will be returned.
 func (q *Qbs) Find(structPtr interface{}) error {
-	q.criteria.model = structPtrToModel(structPtr, !q.criteria.omitJoin, q.criteria.omitFields)
+	q.criteria.model = structPtrToModel(structPtr, !q.criteria.omitJoin, q.criteria.omitFields, q.schema)
 	q.criteria.limit = 1
 	if !q.criteria.model.pkZero() {
 		idPath := q.Dialect.quote(q.criteria.model.table) + "." + q.Dialect.quote(q.criteria.model.pk.name)
@@ -260,7 +281,7 @@ func (q *Qbs) Find(structPtr interface{}) error {
 func (q *Qbs) FindAll(ptrOfSliceOfStructPtr interface{}) error {
 	strucType := reflect.TypeOf(ptrOfSliceOfStructPtr).Elem().Elem().Elem()
 	strucPtr := reflect.New(strucType).Interface()
-	q.criteria.model = structPtrToModel(strucPtr, !q.criteria.omitJoin, q.criteria.omitFields)
+	q.criteria.model = structPtrToModel(strucPtr, !q.criteria.omitJoin, q.criteria.omitFields, q.schema)
 	query, args := q.Dialect.querySql(q.criteria)
 	return q.doQueryRows(ptrOfSliceOfStructPtr, query, args...)
 }
@@ -443,7 +464,7 @@ func (q *Qbs) Save(structPtr interface{}) (affected int64, err error) {
 			return
 		}
 	}
-	model := structPtrToModel(structPtr, true, q.criteria.omitFields)
+	model := structPtrToModel(structPtr, true, q.criteria.omitFields, q.schema)
 	if model.pk == nil {
 		panic("no primary key field")
 	}
@@ -473,6 +494,9 @@ func (q *Qbs) Save(structPtr interface{}) (affected int64, err error) {
 		if _, ok := model.pk.value.(int64); ok && id != 0 {
 			idField := structValue.FieldByName(model.pk.camelName)
 			idField.SetInt(id)
+		} else if _, ok := model.pk.value.(uint64); ok && id != 0 {
+			idField := structValue.FieldByName(model.pk.camelName)
+			idField.SetUint((uint64)(id))
 		}
 		if updateModelField != nil {
 			updateField := structValue.FieldByName(updateModelField.camelName)
@@ -511,7 +535,7 @@ func (q *Qbs) BulkInsert(sliceOfStructPtr interface{}) error {
 				return q.updateTxError(err)
 			}
 		}
-		model := structPtrToModel(structPtrInter, false, nil)
+		model := structPtrToModel(structPtrInter, false, nil, q.schema)
 		if model.pk == nil {
 			panic("no primary key field")
 		}
@@ -542,7 +566,7 @@ func (q *Qbs) Update(structPtr interface{}) (affected int64, err error) {
 			return 0, err
 		}
 	}
-	model := structPtrToModel(structPtr, true, q.criteria.omitFields)
+	model := structPtrToModel(structPtr, true, q.criteria.omitFields, q.schema)
 	q.criteria.model = model
 	q.criteria.mergePkCondition(q.Dialect)
 	if q.criteria.condition == nil {
@@ -554,7 +578,7 @@ func (q *Qbs) Update(structPtr interface{}) (affected int64, err error) {
 // The delete condition can be inferred by the Id value of the struct
 // If neither Id value or condition are provided, it would cause runtime panic
 func (q *Qbs) Delete(structPtr interface{}) (affected int64, err error) {
-	model := structPtrToModel(structPtr, true, q.criteria.omitFields)
+	model := structPtrToModel(structPtr, true, q.criteria.omitFields, q.schema)
 	q.criteria.model = model
 	q.criteria.mergePkCondition(q.Dialect)
 	if q.criteria.condition == nil {
@@ -736,7 +760,7 @@ func (q *Qbs) QueryStruct(dest interface{}, query string, args ...interface{}) e
 //which will get called on each row, the in `do` function the structPtr's value will be set to the current row's value..
 //if `do` function returns an error, the iteration will be stopped.
 func (q *Qbs) Iterate(structPtr interface{}, do func() error) error {
-	q.criteria.model = structPtrToModel(structPtr, !q.criteria.omitJoin, q.criteria.omitFields)
+	q.criteria.model = structPtrToModel(structPtr, !q.criteria.omitJoin, q.criteria.omitFields, q.schema)
 	query, args := q.Dialect.querySql(q.criteria)
 	q.log(query, args...)
 	defer q.Reset()

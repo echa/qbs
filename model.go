@@ -93,6 +93,8 @@ func (model *model) columnsAndValues(forUpdate bool) ([]string, []interface{}) {
 			} else if column.pk {
 				if intValue, ok := column.value.(int64); ok {
 					include = intValue != 0
+				} else if intValue, ok := column.value.(uint64); ok {
+					include = intValue != 0
 				} else if strValue, ok := column.value.(string); ok {
 					include = strValue != ""
 				}
@@ -153,10 +155,10 @@ func (model *model) pkZero() bool {
 	return true
 }
 
-func structPtrToModel(f interface{}, root bool, omitFields []string) *model {
+func structPtrToModel(f interface{}, root bool, omitFields []string, prefix string) *model {
 	model := &model{
 		pk:      nil,
-		table:   tableName(f),
+		table:   prefix + tableName(f),
 		fields:  []*modelField{},
 		indexes: Indexes{},
 	}
@@ -237,7 +239,7 @@ func structPtrToModel(f interface{}, root bool, omitFields []string) *model {
 						if fieldValue.IsNil() {
 							fieldValue.Set(reflect.New(field.Type.Elem()))
 						}
-						refModel := structPtrToModel(fieldValue.Interface(), false, nil)
+						refModel := structPtrToModel(fieldValue.Interface(), false, nil, prefix)
 						ref := new(reference)
 						ref.foreignKey = fk
 						ref.model = refModel

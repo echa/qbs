@@ -142,13 +142,11 @@ func (d base) querySql(criteria *criteria) (string, []interface{}) {
 	return d.dialect.substituteMarkers(query.String()), args
 }
 
+// changed to support PostgreSQL ID generation
 func (d base) insert(q *Qbs) (int64, error) {
 	sql, args := d.dialect.insertSql(q.criteria)
-	result, err := q.Exec(sql, args...)
-	if err != nil {
-		return -1, err
-	}
-	id, err := result.LastInsertId()
+	var id int64
+	err := q.QueryRow(sql, args...).Scan(&id)
 	if err != nil {
 		return -1, err
 	}

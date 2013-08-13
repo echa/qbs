@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"reflect"
 	"strconv"
-	"strings"
+	//	"strings"
 	"time"
 )
 
@@ -30,16 +30,17 @@ func DefaultPostgresDataSourceName(dbName string) *DataSourceName {
 }
 
 func (d postgres) quote(s string) string {
-	segs := strings.Split(s, ".")
-	buf := new(bytes.Buffer)
-	buf.WriteByte('"')
-	buf.WriteString(segs[0])
-	for i := 1; i < len(segs); i++ {
-		buf.WriteString(`"."`)
-		buf.WriteString(segs[i])
-	}
-	buf.WriteByte('"')
-	return buf.String()
+	/*	segs := strings.Split(s, ".")
+		buf := new(bytes.Buffer)
+		buf.WriteByte('"')
+		buf.WriteString(segs[0])
+		for i := 1; i < len(segs); i++ {
+			buf.WriteString(`"."`)
+			buf.WriteString(segs[i])
+		}
+		buf.WriteByte('"')
+		return buf.String()
+	*/return s
 }
 
 func (d postgres) sqlType(f interface{}, size int) string {
@@ -92,6 +93,8 @@ func (d postgres) insert(q *Qbs) (int64, error) {
 	var err error
 	var id int64
 	if _, ok := value.(int64); ok {
+		err = row.Scan(&id)
+	} else if _, ok := value.(uint64); ok {
 		err = row.Scan(&id)
 	} else if _, ok := value.(string); ok {
 		var str string
