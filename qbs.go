@@ -615,7 +615,7 @@ func (q *Qbs) Close() error {
 //If condition is given, the count will be the count of rows meet that condition.
 func (q *Qbs) Count(table interface{}) int64 {
 	quotedTable := q.Dialect.quote(tableName(table))
-	query := "SELECT COUNT(*) FROM " + quotedTable
+	query := "SELECT COUNT(*) FROM " + q.schema + "." + quotedTable
 	var row *sql.Row
 	if q.criteria.condition != nil {
 		conditionSql, args := q.criteria.condition.Merge()
