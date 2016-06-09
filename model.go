@@ -9,6 +9,10 @@ import (
 	"time"
 )
 
+type IdType interface {
+	Int64() int64
+}
+
 //convert struct field name to column name.
 var FieldNameToColumnName func(string) string = toSnake
 
@@ -91,7 +95,9 @@ func (model *model) columnsAndValues(forUpdate bool) ([]string, []interface{}) {
 			if column.value == nil {
 				include = false
 			} else if column.pk {
-				if intValue, ok := column.value.(int64); ok {
+				if idTypeValue, ok := column.value.(IdType); ok {
+					include = idTypeValue.Int64() != 0
+				} else if intValue, ok := column.value.(int64); ok {
 					include = intValue != 0
 				} else if intValue, ok := column.value.(uint64); ok {
 					include = intValue != 0
@@ -133,6 +139,8 @@ func (model *model) pkZero() bool {
 		return true
 	}
 	switch model.pk.value.(type) {
+	case IdType:
+		return model.pk.value.(IdType).Int64() == 0
 	case string:
 		return model.pk.value.(string) == ""
 	case int8:

@@ -92,7 +92,9 @@ func (d postgres) insert(q *Qbs) (int64, error) {
 	value := q.criteria.model.pk.value
 	var err error
 	var id int64
-	if _, ok := value.(int64); ok {
+	if _, ok := value.(IdType); ok {
+		err = row.Scan(&id)
+	} else if _, ok := value.(int64); ok {
 		err = row.Scan(&id)
 	} else if _, ok := value.(uint64); ok {
 		err = row.Scan(&id)

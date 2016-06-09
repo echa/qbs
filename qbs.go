@@ -491,7 +491,10 @@ func (q *Qbs) Save(structPtr interface{}) (affected int64, err error) {
 	}
 	if err == nil {
 		structValue := reflect.Indirect(reflect.ValueOf(structPtr))
-		if _, ok := model.pk.value.(int64); ok && id != 0 {
+		if _, ok := model.pk.value.(IdType); ok && id != 0 {
+			idField := structValue.FieldByName(model.pk.camelName)
+			idField.SetInt(id)
+		} else if _, ok := model.pk.value.(int64); ok && id != 0 {
 			idField := structValue.FieldByName(model.pk.camelName)
 			idField.SetInt(id)
 		} else if _, ok := model.pk.value.(uint64); ok && id != 0 {
