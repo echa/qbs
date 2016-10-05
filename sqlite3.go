@@ -24,9 +24,14 @@ func RegisterSqlite3(dbFileName string) {
 	RegisterWithDataSourceName(dsn)
 }
 
-func (d sqlite3) sqlType(f interface{}, size int) string {
+func (d sqlite3) sqlType(field modelField) string {
+	f := field.value
 	fieldValue := reflect.ValueOf(f)
-	switch fieldValue.Kind() {
+	kind := fieldValue.Kind()
+	if field.nullable != reflect.Invalid {
+		kind = field.nullable
+	}
+	switch kind {
 	case reflect.Bool:
 		return "integer"
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64, reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
@@ -51,9 +56,28 @@ func (d sqlite3) sqlType(f interface{}, size int) string {
 			return "real"
 		case sql.NullString:
 			return "text"
+		default:
+			if len(field.colType) != 0 {
+				switch field.colType {
+				case QBS_COLTYPE_INT:
+					return "integer"
+				case QBS_COLTYPE_BIGINT:
+					return "integer"
+				case QBS_COLTYPE_BOOL:
+					return "integer"
+				case QBS_COLTYPE_TIME:
+					return "text"
+				case QBS_COLTYPE_DOUBLE:
+					return "real"
+				case QBS_COLTYPE_TEXT:
+					return "text"
+				default:
+					panic("Qbs doesn't support column type " + field.colType + "for SQLite3")
+				}
+			}
 		}
 	}
-	panic("invalid sql type")
+	panic("invalid sql type for field:" + field.name)
 }
 
 func (d sqlite3) setModelValue(value reflect.Value, field reflect.Value) error {
@@ -77,11 +101,17 @@ func (d sqlite3) setModelValue(value reflect.Value, field reflect.Value) error {
 	case reflect.Float32, reflect.Float64:
 		field.SetFloat(value.Elem().Float())
 	case reflect.String:
-		field.SetString(value.Elem().String())
+		if value.Elem().Kind() == reflect.Slice {
+			field.SetString(string(value.Elem().Bytes()))
+		} else {
+			field.SetString(value.Elem().String())
+		}
 	case reflect.Slice:
 		if reflect.TypeOf(value.Interface()).Elem().Kind() == reflect.Uint8 {
 			field.SetBytes(value.Elem().Bytes())
 		}
+	case reflect.Ptr:
+		d.setPtrValue(value, field)
 	case reflect.Struct:
 		switch field.Interface().(type) {
 		case time.Time:
@@ -97,6 +127,11 @@ func (d sqlite3) setModelValue(value reflect.Value, field reflect.Value) error {
 				t = time.Unix(value.Elem().Int(), 0)
 			case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
 				t = time.Unix(int64(value.Elem().Uint()), 0)
+			case reflect.Slice:
+				t, err = time.Parse("2006-01-02 15:04:05", string(value.Elem().Bytes()))
+				if err != nil {
+					return err
+				}
 			}
 			v := reflect.NewAt(reflect.TypeOf(time.Time{}), unsafe.Pointer(&t))
 			field.Set(v.Elem())
@@ -158,7 +193,11 @@ func (d sqlite3) columnsInTable(mg *Migration, table interface{}) map[string]boo
 		err = rows.Scan(containers...)
 		value := reflect.Indirect(reflect.ValueOf(containers[1]))
 		if err == nil {
-			columns[value.Elem().String()] = true
+			if value.Elem().Kind() == reflect.Slice {
+				columns[string(value.Elem().Bytes())] = true
+			} else {
+				columns[value.Elem().String()] = true
+			}
 		}
 	}
 	return columns

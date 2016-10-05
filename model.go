@@ -13,6 +13,17 @@ type IdType interface {
 	Int64() int64
 }
 
+type TableNamer interface {
+	TableName() string
+}
+
+const QBS_COLTYPE_INT = "int"
+const QBS_COLTYPE_BOOL = "boolean"
+const QBS_COLTYPE_BIGINT = "bigint"
+const QBS_COLTYPE_DOUBLE = "double"
+const QBS_COLTYPE_TIME = "timestamp"
+const QBS_COLTYPE_TEXT = "text"
+
 //convert struct field name to column name.
 var FieldNameToColumnName func(string) string = toSnake
 
@@ -66,6 +77,8 @@ type modelField struct {
 	dfault    string
 	fk        string
 	join      string
+	colType   string
+	nullable  reflect.Kind
 }
 
 // Model represents a parsed schema interface{}.
@@ -92,7 +105,7 @@ func (model *model) columnsAndValues(forUpdate bool) ([]string, []interface{}) {
 			include = column.value != nil && !column.pk
 		} else {
 			include = true
-			if column.value == nil {
+			if column.value == nil && column.nullable == reflect.Invalid {
 				include = false
 			} else if column.pk {
 				if idTypeValue, ok := column.value.(IdType); ok {
@@ -172,6 +185,11 @@ func structPtrToModel(f interface{}, root bool, omitFields []string, prefix stri
 	}
 	structType := reflect.TypeOf(f).Elem()
 	structValue := reflect.ValueOf(f).Elem()
+	if structType.Kind() == reflect.Ptr {
+		if structType.Elem().Kind() == reflect.Struct {
+			panic("did you pass a pointer to a pointer to a struct?")
+		}
+	}
 	for i := 0; i < structType.NumField(); i++ {
 		structField := structType.Field(i)
 		omit := false
@@ -191,9 +209,18 @@ func structPtrToModel(f interface{}, root bool, omitFields []string, prefix stri
 		if sqlTag == "-" {
 			continue
 		}
+		fieldIsNullable := false
 		kind := structField.Type.Kind()
 		switch kind {
-		case reflect.Ptr, reflect.Map:
+		case reflect.Ptr:
+			switch structField.Type.Elem().Kind() {
+			case reflect.Bool, reflect.String, reflect.Int64, reflect.Float64:
+				kind = structField.Type.Elem().Kind()
+				fieldIsNullable = true
+			default:
+				continue
+			}
+		case reflect.Map:
 			continue
 		case reflect.Slice:
 			elemKind := structField.Type.Elem().Kind()
@@ -206,13 +233,24 @@ func structPtrToModel(f interface{}, root bool, omitFields []string, prefix stri
 		parseTags(fd, sqlTag)
 		fd.camelName = structField.Name
 		fd.name = FieldNameToColumnName(structField.Name)
-		fd.value = fieldValue.Interface()
+		if fieldIsNullable {
+			fd.nullable = kind
+			if fieldValue.IsNil() {
+				fd.value = nil
+			} else {
+				fd.value = fieldValue.Elem().Interface()
+			}
+		} else {
+			//not nullable case
+			fd.value = fieldValue.Interface()
+		}
 		if _, ok := fd.value.(int64); ok && fd.camelName == "Id" {
 			fd.pk = true
 		}
 		if fd.pk {
 			model.pk = fd
 		}
+
 		model.fields = append(model.fields, fd)
 		// fill in references map only in root model.
 		if root {
@@ -225,6 +263,7 @@ func structPtrToModel(f interface{}, root bool, omitFields []string, prefix stri
 				refName = fd.join
 				explicitJoin = true
 			}
+
 			if len(fd.camelName) > 3 && strings.HasSuffix(fd.camelName, "Id") {
 				fdValue := reflect.ValueOf(fd.value)
 				if _, ok := fd.value.(sql.NullInt64); ok || fdValue.Kind() == reflect.Int64 {
@@ -233,6 +272,7 @@ func structPtrToModel(f interface{}, root bool, omitFields []string, prefix stri
 					implicitJoin = true
 				}
 			}
+
 			if fk || explicitJoin || implicitJoin {
 				omit := false
 				for _, v := range omitFields {
@@ -294,6 +334,9 @@ func tableName(talbe interface{}) string {
 			break
 		}
 	}
+	if tn, ok := talbe.(TableNamer); ok {
+		return tn.TableName()
+	}
 	return StructNameToTableName(t.Name())
 }
 
@@ -314,6 +357,8 @@ func parseTags(fd *modelField, s string) {
 				fd.dfault = c2[1]
 			case "join":
 				fd.join = c2[1]
+			case "coltype":
+				fd.colType = c2[1]
 			default:
 				panic(c2[0] + " tag syntax error")
 			}
@@ -385,4 +430,5 @@ var ValidTags = map[string]bool{
 	"notnull": true,
 	"updated": true,
 	"created": true,
+	"coltype": true,
 }

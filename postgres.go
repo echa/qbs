@@ -43,9 +43,14 @@ func (d postgres) quote(s string) string {
 	*/return s
 }
 
-func (d postgres) sqlType(f interface{}, size int) string {
+func (d postgres) sqlType(field modelField) string {
+	f := field.value
 	fieldValue := reflect.ValueOf(f)
-	switch fieldValue.Kind() {
+	kind := fieldValue.Kind()
+	if field.nullable != reflect.Invalid {
+		kind = field.nullable
+	}
+	switch kind {
 	case reflect.Bool:
 		return "boolean"
 	case reflect.Int8, reflect.Int16, reflect.Int32, reflect.Uint8, reflect.Uint16, reflect.Uint32:
@@ -55,14 +60,14 @@ func (d postgres) sqlType(f interface{}, size int) string {
 	case reflect.Float32, reflect.Float64:
 		return "double precision"
 	case reflect.String:
-		if size > 0 && size < 65532 {
-			return fmt.Sprintf("varchar(%d)", size)
+		if field.size > 0 && field.size < 65532 {
+			return fmt.Sprintf("varchar(%d)", field.size)
 		}
 		return "text"
 	case reflect.Slice:
 		if reflect.TypeOf(f).Elem().Kind() == reflect.Uint8 {
-			if size > 0 && size < 65532 {
-				return fmt.Sprintf("varbinary(%d)", size)
+			if field.size > 0 && field.size < 65532 {
+				return fmt.Sprintf("varbinary(%d)", field.size)
 			}
 			return "bytea"
 		}
@@ -77,13 +82,34 @@ func (d postgres) sqlType(f interface{}, size int) string {
 		case sql.NullFloat64:
 			return "double precision"
 		case sql.NullString:
-			if size > 0 && size < 65532 {
-				return fmt.Sprintf("varchar(%d)", size)
+			if field.size > 0 && field.size < 65532 {
+				return fmt.Sprintf("varchar(%d)", field.size)
 			}
 			return "text"
+		default:
+			if len(field.colType) != 0 {
+				switch field.colType {
+				case QBS_COLTYPE_BOOL, QBS_COLTYPE_BIGINT:
+					return field.colType
+				case QBS_COLTYPE_INT:
+					return "integer"
+				case QBS_COLTYPE_DOUBLE:
+					return "double precision"
+				case QBS_COLTYPE_TIME:
+					return "timestamp with time zone"
+				case QBS_COLTYPE_TEXT:
+					if field.size > 0 && field.size < 65532 {
+						return fmt.Sprintf("varchar(%d)", field.size)
+					}
+					return "text"
+				default:
+					panic("Qbs doesn't support column type " +
+						field.colType + " for postgres")
+				}
+			}
 		}
 	}
-	panic("invalid sql type")
+	panic("invalid sql type for field:" + field.name)
 }
 
 func (d postgres) insert(q *Qbs) (int64, error) {
