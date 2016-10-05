@@ -29,7 +29,7 @@ type addColumnTestTable struct {
 }
 
 func doTestAddColumSQL(assert *Assert, info dialectSyntax) {
-	testModel := structPtrToModel(new(addColumnTestTable), false, nil)
+	testModel := structPtrToModel(new(addColumnTestTable), false, nil, "")
 	sql := info.dialect.addColumnSql("a", *testModel.fields[0])
 	assert.Equal(info.addColumnSql, sql)
 }
