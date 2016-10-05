@@ -40,7 +40,7 @@ func (d base) setPtrValue(driverValue, fieldValue reflect.Value) {
 	fieldValue.Set(v)
 	switch t.Kind() {
 	case reflect.String:
-		v.Elem().SetString(string(driverValue.Interface().([]uint8)))
+		v.Elem().SetString(driverValue.Interface().(string))
 	case reflect.Int64:
 		v.Elem().SetInt(driverValue.Interface().(int64))
 	case reflect.Float64:
