@@ -87,9 +87,9 @@ func (d base) setModelValue(driverValue, fieldValue reflect.Value) error {
 			}
 		}
 	default:
-               if scanner, ok := fieldValue.Addr().Interface().(sql.Scanner); ok {
-                       return scanner.Scan(driverValue.Interface())
-               }
+		if scanner, ok := fieldValue.Addr().Interface().(sql.Scanner); ok {
+			return scanner.Scan(driverValue.Interface())
+		}
 	}
 	return nil
 }
