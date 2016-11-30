@@ -32,6 +32,8 @@ type Qbs struct {
 	txStmtMap    map[string]*sql.Stmt
 	criteria     *criteria
 	firstTxError error
+	queryLogger  *log.Logger
+	errorLogger  *log.Logger
 }
 
 type Validator interface {
@@ -110,6 +112,8 @@ func GetQbs() (q *Qbs, err error) {
 	q.Dialect = dial
 	q.criteria = new(criteria)
 	q.schema = schema
+	q.queryLogger = queryLogger
+	q.errorLogger = errorLogger
 	return q, nil
 }
 
@@ -118,7 +122,7 @@ func ChangePoolSize(size int) {
 	db.SetMaxIdleConns(size)
 }
 
-func SetLogger(query *log.Logger, err *log.Logger) {
+func SetDefaultLogger(query *log.Logger, err *log.Logger) {
 	queryLogger = query
 	errorLogger = err
 }
@@ -141,6 +145,11 @@ func (q *Qbs) SetSchema(s string) {
 
 func (q *Qbs) GetSchema() string {
 	return q.schema
+}
+
+func (q *Qbs) SetLogger(query *log.Logger, err *log.Logger) {
+	q.queryLogger = query
+	q.errorLogger = err
 }
 
 // Create a new criteria for subsequent query
@@ -168,8 +177,8 @@ func (q *Qbs) InTransaction() bool {
 
 func (q *Qbs) updateTxError(e error) error {
 	if e != nil {
-		if errorLogger != nil {
-			errorLogger.Println(e)
+		if q.errorLogger != nil {
+			q.errorLogger.Println(e)
 		}
 		// don't shadow the first error
 		if q.firstTxError == nil {
@@ -800,8 +809,8 @@ func (q *Qbs) Iterate(structPtr interface{}, do func() error) error {
 }
 
 func (q *Qbs) log(query string, args ...interface{}) {
-	if q.Log && queryLogger != nil {
-		queryLogger.Print(query)
-		queryLogger.Println(args...)
+	if q.Log && q.queryLogger != nil {
+		q.queryLogger.Print(query)
+		q.queryLogger.Println(args...)
 	}
 }
