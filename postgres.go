@@ -71,6 +71,7 @@ func (d postgres) sqlType(field modelField) string {
 			}
 			return "bytea"
 		}
+		return fmt.Sprintf("varchar(%d)", field.size)
 	case reflect.Struct:
 		switch fieldValue.Interface().(type) {
 		case time.Time:

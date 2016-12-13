@@ -72,7 +72,9 @@ func (d base) setModelValue(driverValue, fieldValue reflect.Value) error {
 			fieldValue.SetString(string(driverValue.Interface().([]uint8)))
 		}
 	case reflect.Slice:
-		if reflect.TypeOf(driverValue.Interface()).Elem().Kind() == reflect.Uint8 {
+		if scanner, ok := fieldValue.Addr().Interface().(sql.Scanner); ok {
+			return scanner.Scan(driverValue.Interface())
+		} else if reflect.TypeOf(driverValue.Interface()).Elem().Kind() == reflect.Uint8 {
 			fieldValue.SetBytes(driverValue.Elem().Bytes())
 		}
 	case reflect.Ptr:

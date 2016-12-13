@@ -226,9 +226,12 @@ func structPtrToModel(f interface{}, root bool, omitFields []string, prefix stri
 				continue
 			}
 		case reflect.Slice:
-			elemKind := structField.Type.Elem().Kind()
-			if elemKind != reflect.Uint8 {
-				continue
+			// allow int slices and slices with scanner interface
+			if _, ok := fieldValue.Addr().Interface().(sql.Scanner); !ok {
+				elemKind := structField.Type.Elem().Kind()
+				if elemKind != reflect.Uint8 {
+					continue
+				}
 			}
 		}
 
