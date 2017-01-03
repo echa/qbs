@@ -247,6 +247,11 @@ func (q *Qbs) Offset(offset int) *Qbs {
 	return q
 }
 
+func (q *Qbs) Order(path string, desc bool) *Qbs {
+	q.criteria.orderBys = append(q.criteria.orderBys, order{q.Dialect.quote(path), desc})
+	return q
+}
+
 func (q *Qbs) OrderBy(path string) *Qbs {
 	q.criteria.orderBys = append(q.criteria.orderBys, order{q.Dialect.quote(path), false})
 	return q
