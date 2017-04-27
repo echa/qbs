@@ -424,7 +424,7 @@ func (q *Qbs) scanRows(rowValue reflect.Value, rows *sql.Rows) error {
 			}
 		}
 	}
-	return
+	return nil
 }
 
 // Same as sql.Db.Exec or sql.Tx.Exec depends on if transaction has began
@@ -461,7 +461,7 @@ func (q *Qbs) Query(query string, args ...interface{}) (*sql.Rows, error) {
 	query = q.Dialect.substituteMarkers(query)
 	stmt, err := q.prepare(query)
 	if err != nil {
-		return q.updateTxError(err)
+		return nil, q.updateTxError(err)
 	}
 	return stmt.QueryContext(q.ctx, args...)
 }
