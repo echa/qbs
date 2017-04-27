@@ -198,7 +198,7 @@ func (q *Qbs) InTransaction() bool {
 func (q *Qbs) updateTxError(e error) error {
 	if e != nil {
 		if q.errorLogger != nil {
-			q.errorLogger.Println(e)
+			q.errorLogger.Println("qbs:", e)
 		}
 		// don't shadow the first error
 		if q.firstTxError == nil {
@@ -212,6 +212,9 @@ func (q *Qbs) updateTxError(e error) error {
 // occurred inside the transaction.
 func (q *Qbs) Commit() error {
 	err := q.tx.Commit()
+	if err != nil {
+		q.errorLogger.Println("qbs: commit error:", err)
+	}
 	q.updateTxError(err)
 	q.tx = nil
 	for _, v := range q.txStmtMap {
@@ -224,6 +227,9 @@ func (q *Qbs) Commit() error {
 // Rollback rolls back a started transaction.
 func (q *Qbs) Rollback() error {
 	err := q.tx.Rollback()
+	if err != nil {
+		q.errorLogger.Println("qbs: rollback error:", err)
+	}
 	q.tx = nil
 	for _, v := range q.txStmtMap {
 		v.Close()
@@ -376,7 +382,10 @@ func (q *Qbs) doQueryRows(out interface{}, query string, args ...interface{}) er
 }
 
 func (q *Qbs) scanRows(rowValue reflect.Value, rows *sql.Rows) (err error) {
-	cols, _ := rows.Columns()
+	cols, err := rows.Columns()
+	if err != nil {
+		return q.updateTxError(err)
+	}
 	containers := make([]interface{}, 0, len(cols))
 	for i := 0; i < cap(containers); i++ {
 		var v interface{}
@@ -708,7 +717,10 @@ func (q *Qbs) doQueryMap(query string, once bool, args ...interface{}) ([]map[st
 	}
 	defer rows.Close()
 	var results []map[string]interface{}
-	columns, _ := rows.Columns()
+	columns, err := rows.Columns()
+	if err != nil {
+		return nil, q.updateTxError(err)
+	}
 	containers := make([]interface{}, len(columns))
 	for i := 0; i < len(columns); i++ {
 		var container interface{}
@@ -762,7 +774,10 @@ func (q *Qbs) QueryStruct(dest interface{}, query string, args ...interface{}) e
 		structType = outValue.Type()
 		single = true
 	}
-	columns, _ := rows.Columns()
+	columns, err := rows.Columns()
+	if err != nil {
+		return q.updateTxError(err)
+	}
 	fieldNames := make([]string, len(columns))
 	for i, v := range columns {
 		upper := snakeToUpperCamel(v)
@@ -835,7 +850,7 @@ func (q *Qbs) Iterate(structPtr interface{}, do func() error) error {
 
 func (q *Qbs) log(query string, args ...interface{}) {
 	if q.Log && q.queryLogger != nil {
-		q.queryLogger.Print(query)
+		q.queryLogger.Print("qbs:", query)
 		q.queryLogger.Println(args...)
 	}
 }
