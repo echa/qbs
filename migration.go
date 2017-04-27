@@ -113,7 +113,7 @@ func (mg *Migration) Close() {
 
 // Get a Migration instance should get closed like Qbs instance.
 func GetMigration() (mg *Migration, err error) {
-	return GetMigrationContext(contex.Background())
+	return GetMigrationContext(context.Background())
 }
 
 func GetMigrationContext(ctx context.Context) (mg *Migration, err error) {
