@@ -381,7 +381,7 @@ func (q *Qbs) doQueryRows(out interface{}, query string, args ...interface{}) er
 	return nil
 }
 
-func (q *Qbs) scanRows(rowValue reflect.Value, rows *sql.Rows) (err error) {
+func (q *Qbs) scanRows(rowValue reflect.Value, rows *sql.Rows) error {
 	cols, err := rows.Columns()
 	if err != nil {
 		return q.updateTxError(err)
@@ -393,7 +393,7 @@ func (q *Qbs) scanRows(rowValue reflect.Value, rows *sql.Rows) (err error) {
 	}
 	err = rows.Scan(containers...)
 	if err != nil {
-		return
+		return err
 	}
 	for i, v := range containers {
 		value := reflect.Indirect(reflect.ValueOf(v))
@@ -411,7 +411,7 @@ func (q *Qbs) scanRows(rowValue reflect.Value, rows *sql.Rows) (err error) {
 			if subField.IsValid() {
 				err = q.Dialect.setModelValue(value, subField)
 				if err != nil {
-					return
+					return err
 				}
 			}
 		} else {
@@ -419,7 +419,7 @@ func (q *Qbs) scanRows(rowValue reflect.Value, rows *sql.Rows) (err error) {
 			if field.IsValid() {
 				err = q.Dialect.setModelValue(value, field)
 				if err != nil {
-					return
+					return err
 				}
 			}
 		}
@@ -456,13 +456,12 @@ func (q *Qbs) QueryRow(query string, args ...interface{}) *sql.Row {
 }
 
 // Same as sql.Db.Query or sql.Tx.Query depends on if transaction has began
-func (q *Qbs) Query(query string, args ...interface{}) (rows *sql.Rows, err error) {
+func (q *Qbs) Query(query string, args ...interface{}) (*sql.Rows, error) {
 	q.log(query, args...)
 	query = q.Dialect.substituteMarkers(query)
 	stmt, err := q.prepare(query)
 	if err != nil {
-		q.updateTxError(err)
-		return
+		return q.updateTxError(err)
 	}
 	return stmt.QueryContext(q.ctx, args...)
 }
