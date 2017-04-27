@@ -105,7 +105,7 @@ func (d oracle) indexExists(mg *Migration, tableName, indexName string) bool {
 	query := "SELECT INDEX_NAME FROM USER_INDEXES "
 	query += "WHERE TABLE_NAME = ? AND INDEX_NAME = ?"
 	query = d.substituteMarkers(query)
-	row = mg.db.QueryRow(query, tableName, indexName)
+	row = mg.db.QueryRowContext(mg.ctx, query, tableName, indexName)
 	row.Scan(&name)
 	return name != ""
 }
@@ -129,7 +129,7 @@ func (d oracle) columnsInTable(mg *Migration, table interface{}) map[string]bool
 	columns := make(map[string]bool)
 	query := "SELECT COLUMN_NAME FROM USER_TAB_COLUMNS WHERE TABLE_NAME = ?"
 	query = mg.dialect.substituteMarkers(query)
-	rows, err := mg.db.Query(query, tn)
+	rows, err := mg.db.QueryContext(mg.ctx, query, tn)
 	defer rows.Close()
 	if err != nil {
 		panic(err)

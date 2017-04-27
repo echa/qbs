@@ -159,7 +159,7 @@ func (d sqlite3) setModelValue(value reflect.Value, field reflect.Value) error {
 
 func (d sqlite3) indexExists(mg *Migration, tableName string, indexName string) bool {
 	query := "PRAGMA index_list('" + tableName + "')"
-	rows, err := mg.db.Query(query)
+	rows, err := mg.db.QueryContext(mg.ctx, query)
 	if err != nil {
 		panic(err)
 	}
@@ -178,7 +178,7 @@ func (d sqlite3) columnsInTable(mg *Migration, table interface{}) map[string]boo
 	tn := tableName(table)
 	columns := make(map[string]bool)
 	query := "PRAGMA table_info('" + tn + "')"
-	rows, err := mg.db.Query(query)
+	rows, err := mg.db.QueryContext(mg.ctx, query)
 	if err != nil {
 		panic(err)
 	}

@@ -97,7 +97,7 @@ func (d mysql) sqlType(field modelField) string {
 func (d mysql) indexExists(mg *Migration, tableName, indexName string) bool {
 	var row *sql.Row
 	var name string
-	row = mg.db.QueryRow("SELECT INDEX_NAME FROM INFORMATION_SCHEMA.STATISTICS "+
+	row = mg.db.QueryRowContext(mg.ctx, "SELECT INDEX_NAME FROM INFORMATION_SCHEMA.STATISTICS "+
 		"WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND INDEX_NAME = ?", mg.dbName, tableName, indexName)
 	row.Scan(&name)
 	return name != ""

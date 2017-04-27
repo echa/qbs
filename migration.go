@@ -1,12 +1,14 @@
 package qbs
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"strings"
 )
 
 type Migration struct {
+	ctx     context.Context
 	db      *sql.DB
 	dbName  string
 	dialect Dialect
@@ -23,7 +25,7 @@ func (mg *Migration) CreateTableIfNotExists(structPtr interface{}) error {
 	}
 	sqls := strings.Split(sql, ";")
 	for _, v := range sqls {
-		_, err := mg.db.Exec(v)
+		_, err := mg.db.ExecContext(mg.ctx, v)
 		if err != nil && !mg.dialect.catchMigrationError(err) {
 			panic(err)
 		}
@@ -56,7 +58,7 @@ func (mg *Migration) CreateTableIfNotExists(structPtr interface{}) error {
 // this is only used for testing.
 func (mg *Migration) dropTableIfExists(structPtr interface{}) {
 	tn := tableName(structPtr)
-	_, err := mg.db.Exec(mg.dialect.dropTableSql(tn))
+	_, err := mg.db.ExecContext(mg.ctx, mg.dialect.dropTableSql(tn))
 	if err != nil && !mg.dialect.catchMigrationError(err) {
 		panic(err)
 	}
@@ -76,7 +78,7 @@ func (mg *Migration) addColumn(table string, column *modelField) {
 	if mg.Log {
 		fmt.Println(sql)
 	}
-	_, err := mg.db.Exec(sql)
+	_, err := mg.db.ExecContext(mg.ctx, sql)
 	if err != nil {
 		panic(err)
 	}
@@ -94,7 +96,7 @@ func (mg *Migration) CreateIndexIfNotExists(table interface{}, name string, uniq
 		if mg.Log {
 			fmt.Println(sql)
 		}
-		_, err := mg.db.Exec(sql)
+		_, err := mg.db.ExecContext(mg.ctx, sql)
 		return err
 	}
 	return nil
@@ -111,6 +113,10 @@ func (mg *Migration) Close() {
 
 // Get a Migration instance should get closed like Qbs instance.
 func GetMigration() (mg *Migration, err error) {
+	return GetMigrationContext(contex.Background())
+}
+
+func GetMigrationContext(ctx context.Context) (mg *Migration, err error) {
 	if driver == "" || dial == nil {
 		panic("database driver has not been registered, should call Register first.")
 	}
@@ -118,7 +124,7 @@ func GetMigration() (mg *Migration, err error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Migration{db, dbName, dial, false}, nil
+	return &Migration{ctx, db, dbName, dial, false}, nil
 }
 
 // A safe and easy way to work with Migration instance without the need to open and close it.

@@ -304,7 +304,7 @@ func (d base) columnsInTable(mg *Migration, table interface{}) map[string]bool {
 	columns := make(map[string]bool)
 	query := "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?"
 	query = mg.dialect.substituteMarkers(query)
-	rows, err := mg.db.Query(query, mg.dbName, tn)
+	rows, err := mg.db.QueryContext(mg.ctx, query, mg.dbName, tn)
 	defer rows.Close()
 	if err != nil {
 		panic(err)

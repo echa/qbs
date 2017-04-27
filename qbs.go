@@ -1,6 +1,7 @@
 package qbs
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -28,6 +29,7 @@ type Qbs struct {
 	Dialect      Dialect
 	Log          bool //Set to true to print out sql statement.
 	schema       string
+	ctx          context.Context
 	tx           *sql.Tx
 	txStmtMap    map[string]*sql.Stmt
 	criteria     *criteria
@@ -94,12 +96,20 @@ func WithQbs(task func(*Qbs) error) error {
 //		...
 //
 func GetQbs() (q *Qbs, err error) {
+	return GetQbsContext(context.Background())
+}
+
+func GetQbsContext(ctx context.Context) (q *Qbs, err error) {
 	if driver == "" || dial == nil {
 		panic("database driver has not been registered, should call Register first.")
 	}
 	if connectionLimit != nil {
 		if blockingOnLimit {
-			connectionLimit <- struct{}{}
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case connectionLimit <- struct{}{}:
+			}
 		} else {
 			select {
 			case connectionLimit <- struct{}{}:
@@ -109,6 +119,7 @@ func GetQbs() (q *Qbs, err error) {
 		}
 	}
 	q = new(Qbs)
+	q.ctx = ctx
 	q.Dialect = dial
 	q.criteria = new(criteria)
 	q.schema = schema
@@ -120,6 +131,7 @@ func GetQbs() (q *Qbs, err error) {
 //The default connection pool size is 100.
 func ChangePoolSize(size int) {
 	db.SetMaxIdleConns(size)
+	db.SetMaxOpenConns(size)
 }
 
 func SetDefaultLogger(query *log.Logger, err *log.Logger) {
@@ -162,13 +174,21 @@ func (q *Qbs) Reset() {
 // no matter it is in transaction or not.
 // It panics if it's already in a transaction.
 func (q *Qbs) Begin() error {
+	return q.BeginTx(q.ctx, nil)
+}
+
+func (q *Qbs) BeginTx(ctx context.Context, opts *sql.TxOptions) error {
 	if q.tx != nil {
 		panic("cannot start nested transaction")
 	}
-	tx, err := db.Begin()
+	q.ctx = ctx
+	tx, err := db.BeginTx(ctx, opts)
+	if err != nil {
+		return err
+	}
 	q.tx = tx
 	q.txStmtMap = make(map[string]*sql.Stmt)
-	return err
+	return nil
 }
 
 func (q *Qbs) InTransaction() bool {
@@ -314,7 +334,7 @@ func (q *Qbs) doQueryRow(out interface{}, query string, args ...interface{}) err
 	if err != nil {
 		return q.updateTxError(err)
 	}
-	rows, err := stmt.Query(args...)
+	rows, err := stmt.QueryContext(q.ctx, args...)
 	if err != nil {
 		return q.updateTxError(err)
 	}
@@ -339,7 +359,7 @@ func (q *Qbs) doQueryRows(out interface{}, query string, args ...interface{}) er
 	if err != nil {
 		return q.updateTxError(err)
 	}
-	rows, err := stmt.Query(args...)
+	rows, err := stmt.QueryContext(q.ctx, args...)
 	if err != nil {
 		return q.updateTxError(err)
 	}
@@ -407,7 +427,7 @@ func (q *Qbs) Exec(query string, args ...interface{}) (sql.Result, error) {
 	if err != nil {
 		return nil, q.updateTxError(err)
 	}
-	result, err := stmt.Exec(args...)
+	result, err := stmt.ExecContext(q.ctx, args...)
 	if err != nil {
 		return nil, q.updateTxError(err)
 	}
@@ -423,7 +443,7 @@ func (q *Qbs) QueryRow(query string, args ...interface{}) *sql.Row {
 		q.updateTxError(err)
 		return nil
 	}
-	return stmt.QueryRow(args...)
+	return stmt.QueryRowContext(q.ctx, args...)
 }
 
 // Same as sql.Db.Query or sql.Tx.Query depends on if transaction has began
@@ -435,7 +455,7 @@ func (q *Qbs) Query(query string, args ...interface{}) (rows *sql.Rows, err erro
 		q.updateTxError(err)
 		return
 	}
-	return stmt.Query(args...)
+	return stmt.QueryContext(q.ctx, args...)
 }
 
 // Same as sql.Db.Prepare or sql.Tx.Prepare depends on if transaction has began
@@ -446,7 +466,7 @@ func (q *Qbs) prepare(query string) (stmt *sql.Stmt, err error) {
 		if ok {
 			return
 		}
-		stmt, err = q.tx.Prepare(query)
+		stmt, err = q.tx.PrepareContext(q.ctx, query)
 		if err != nil {
 			q.updateTxError(err)
 			return
@@ -460,7 +480,7 @@ func (q *Qbs) prepare(query string) (stmt *sql.Stmt, err error) {
 			return
 		}
 
-		stmt, err = db.Prepare(query + ";")
+		stmt, err = db.PrepareContext(q.ctx, query+";")
 		if err != nil {
 			q.updateTxError(err)
 			return
@@ -682,7 +702,7 @@ func (q *Qbs) doQueryMap(query string, once bool, args ...interface{}) ([]map[st
 	if err != nil {
 		return nil, q.updateTxError(err)
 	}
-	rows, err := stmt.Query(args...)
+	rows, err := stmt.QueryContext(q.ctx, args...)
 	if err != nil {
 		return nil, q.updateTxError(err)
 	}
@@ -727,7 +747,7 @@ func (q *Qbs) QueryStruct(dest interface{}, query string, args ...interface{}) e
 	if err != nil {
 		return q.updateTxError(err)
 	}
-	rows, err := stmt.Query(args...)
+	rows, err := stmt.QueryContext(q.ctx, args...)
 	if err != nil {
 		return q.updateTxError(err)
 	}
@@ -795,7 +815,7 @@ func (q *Qbs) Iterate(structPtr interface{}, do func() error) error {
 	if err != nil {
 		return q.updateTxError(err)
 	}
-	rows, err := stmt.Query(args...)
+	rows, err := stmt.QueryContext(q.ctx, args...)
 	if err != nil {
 		return q.updateTxError(err)
 	}

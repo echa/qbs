@@ -144,7 +144,7 @@ func (d postgres) indexExists(mg *Migration, tableName, indexName string) bool {
 	query := "SELECT indexname FROM pg_indexes "
 	query += "WHERE tablename = ? AND indexname = ?"
 	query = d.substituteMarkers(query)
-	row = mg.db.QueryRow(query, tableName, indexName)
+	row = mg.db.QueryRowContext(mg.ctx, query, tableName, indexName)
 	row.Scan(&name)
 	return name != ""
 }
@@ -170,7 +170,7 @@ func (d postgres) columnsInTable(mg *Migration, table interface{}) map[string]bo
 	columns := make(map[string]bool)
 	query := "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = ?"
 	query = mg.dialect.substituteMarkers(query)
-	rows, err := mg.db.Query(query, tn)
+	rows, err := mg.db.QueryContext(mg.ctx, query, tn)
 	defer rows.Close()
 	if err != nil {
 		panic(err)
