@@ -112,6 +112,8 @@ func GetQbsContext(ctx context.Context) (q *Qbs, err error) {
 			}
 		} else {
 			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
 			case connectionLimit <- struct{}{}:
 			default:
 				return nil, ConnectionLimitError
@@ -126,6 +128,10 @@ func GetQbsContext(ctx context.Context) (q *Qbs, err error) {
 	q.queryLogger = queryLogger
 	q.errorLogger = errorLogger
 	return q, nil
+}
+
+func GetStats() sql.DBStats {
+	return db.Stats()
 }
 
 //The default connection pool size is 100.
