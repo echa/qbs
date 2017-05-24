@@ -24,7 +24,7 @@ func TestFieldOmit(t *testing.T) {
 		B string
 		C string
 	}
-	m := structPtrToModel(&Schema{}, true, []string{"C"})
+	m := structPtrToModel(&Schema{}, true, []string{"C"}, "")
 	assert.Equal(1, len(m.fields))
 }
 
@@ -43,7 +43,7 @@ func TestInterfaceToModelWithReference(t *testing.T) {
 	table1 := &table{
 		6, 3, &parent{3, "Mrs. A", "infinite"},
 	}
-	m := structPtrToModel(table1, true, nil)
+	m := structPtrToModel(table1, true, nil, "")
 	ref, ok := m.refs["Father"]
 	assert.MustTrue(ok)
 	f := ref.model.fields[1]
@@ -72,7 +72,7 @@ func TestInterfaceToModel(t *testing.T) {
 		ColVarChar: "orange",
 		ColTime:    now,
 	}
-	m := structPtrToModel(table1, true, nil)
+	m := structPtrToModel(table1, true, nil, "")
 	assert.Equal("col_primary", m.pk.name)
 	assert.Equal(4, len(m.fields))
 	assert.Equal(2, len(m.indexes))
@@ -112,7 +112,7 @@ func TestInterfaceToSubModel(t *testing.T) {
 		unexported int64
 	}
 	pst := new(Post)
-	model := structPtrToModel(pst, true, nil)
+	model := structPtrToModel(pst, true, nil, "")
 	assert.Equal(1, len(model.refs))
 }
 
@@ -123,7 +123,7 @@ func TestColumnsAndValues(t *testing.T) {
 		Name string
 	}
 	user := new(User)
-	model := structPtrToModel(user, true, nil)
+	model := structPtrToModel(user, true, nil, "")
 	columns, values := model.columnsAndValues(false)
 	assert.MustEqual(1, len(columns))
 	assert.MustEqual(1, len(values))
@@ -141,7 +141,7 @@ func (s *SomethingNotUser) TableName() string {
 func TestTableNamer(t *testing.T) {
 	assert := NewAssert(t)
 	var u SomethingNotUser
-	model := structPtrToModel(&u, true, nil)
+	model := structPtrToModel(&u, true, nil, "")
 	assert.Equal("User", model.table)
 }
 
@@ -155,7 +155,7 @@ type PointerStructFields struct {
 func TestModelFieldsIndicateNullable(t *testing.T) {
 	assert := NewAssert(t)
 	var p PointerStructFields
-	model := structPtrToModel(&p, true, nil)
+	model := structPtrToModel(&p, true, nil, "")
 	assert.Equal(3, len(model.fields))
 	for i := 0; i < 3; i++ {
 		f := model.fields[i]

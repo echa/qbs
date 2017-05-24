@@ -62,7 +62,7 @@ var postgresSqlTypeResults []string = []string{
 func TestSqlTypeForPgDialect(t *testing.T) {
 	assert := NewAssert(t)
 	d := NewPostgres()
-	testModel := structPtrToModel(new(typeTestTable), false, nil)
+	testModel := structPtrToModel(new(typeTestTable), false, nil, "")
 	for index, column := range testModel.fields {
 		if storedResult := postgresSqlTypeResults[index]; storedResult != "-" {
 			result := d.sqlType(*column)

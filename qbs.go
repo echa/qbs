@@ -450,15 +450,15 @@ func (q *Qbs) Exec(query string, args ...interface{}) (sql.Result, error) {
 }
 
 // Same as sql.Db.QueryRow or sql.Tx.QueryRow depends on if transaction has began
-func (q *Qbs) QueryRow(query string, args ...interface{}) *sql.Row {
+func (q *Qbs) QueryRow(query string, args ...interface{}) (*sql.Row, error) {
 	q.log(query, args...)
 	query = q.Dialect.substituteMarkers(query)
 	stmt, err := q.prepare(query)
 	if err != nil {
 		q.updateTxError(err)
-		return nil
+		return nil, err
 	}
-	return stmt.QueryRowContext(q.ctx, args...)
+	return stmt.QueryRowContext(q.ctx, args...), nil
 }
 
 // Same as sql.Db.Query or sql.Tx.Query depends on if transaction has began
@@ -650,9 +650,13 @@ func (q *Qbs) ContainsValue(table interface{}, column string, value interface{})
 	quotedColumn := q.Dialect.quote(column)
 	quotedTable := q.Dialect.quote(tableName(table))
 	query := fmt.Sprintf("SELECT %v FROM %v WHERE %v = ?", quotedColumn, quotedTable, quotedColumn)
-	row := q.QueryRow(query, value)
+	row, err := q.QueryRow(query, value)
+	if err != nil {
+		q.updateTxError(err)
+		return false
+	}
 	var result interface{}
-	err := row.Scan(&result)
+	err = row.Scan(&result)
 	q.updateTxError(err)
 	return err == nil
 }
@@ -668,7 +672,7 @@ func (q *Qbs) Close() error {
 	return nil
 }
 
-//Query the count of rows in a table the talbe parameter can be either a string or struct pointer.
+//Query the count of rows in a table the table parameter can be either a string or struct pointer.
 //If condition is given, the count will be the count of rows meet that condition.
 func (q *Qbs) Count(table interface{}) int64 {
 	quotedTable := q.Dialect.quote(tableName(table))
@@ -678,15 +682,19 @@ func (q *Qbs) Count(table interface{}) int64 {
 	}
 	query := "SELECT COUNT(*) FROM " + quotedTable
 	var row *sql.Row
+	var err error
 	if q.criteria.condition != nil {
 		conditionSql, args := q.criteria.condition.Merge()
 		query += " WHERE " + conditionSql
-		row = q.QueryRow(query, args...)
+		row, err = q.QueryRow(query, args...)
 	} else {
-		row = q.QueryRow(query)
+		row, err = q.QueryRow(query)
+	}
+	if err != nil {
+		return 0
 	}
 	var count int64
-	err := row.Scan(&count)
+	err = row.Scan(&count)
 	if err == sql.ErrNoRows {
 		return 0
 	} else if err != nil {

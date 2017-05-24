@@ -63,7 +63,7 @@ var sqlite3SqlTypeResults []string = []string{
 func TestSqlite3SqlType(t *testing.T) {
 	assert := NewAssert(t)
 	d := NewSqlite3()
-	testModel := structPtrToModel(new(typeTestTable), false, nil)
+	testModel := structPtrToModel(new(typeTestTable), false, nil, "")
 	for index, column := range testModel.fields {
 		if storedResult := sqlite3SqlTypeResults[index]; storedResult != "-" {
 			result := d.sqlType(*column)

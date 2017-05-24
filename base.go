@@ -163,7 +163,11 @@ func (d base) querySql(criteria *criteria) (string, []interface{}) {
 func (d base) insert(q *Qbs) (int64, error) {
 	sql, args := d.dialect.insertSql(q.criteria)
 	var id int64
-	err := q.QueryRow(sql, args...).Scan(&id)
+	row, err := q.QueryRow(sql, args...)
+	if err != nil {
+		return -1, err
+	}
+	err = row.Scan(&id)
 	if err != nil {
 		return -1, err
 	}

@@ -2,8 +2,7 @@ package qbs
 
 import (
 	"testing"
-
-//	"time"
+	//	"time"
 )
 
 var oracleSqlTypeResults []string = []string{
@@ -37,7 +36,7 @@ func TestSqlTypeForOrDialect(t *testing.T) {
 	assert := NewAssert(t)
 	d := NewOracle()
 	//omitFields := []string{"Bool", "DerivedBool"}
-	testModel := structPtrToModel(new(typeTestTable), false, nil)
+	testModel := structPtrToModel(new(typeTestTable), false, nil, "")
 	for index, column := range testModel.fields {
 		if storedResult := oracleSqlTypeResults[index]; storedResult != "-" {
 			result := d.sqlType(*column)

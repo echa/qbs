@@ -67,7 +67,7 @@ func TestMysqlSqlType(t *testing.T) {
 	assert := NewAssert(t)
 
 	d := NewMysql()
-	testModel := structPtrToModel(new(typeTestTable), false, nil)
+	testModel := structPtrToModel(new(typeTestTable), false, nil, "")
 	for index, column := range testModel.fields {
 		if storedResult := mysqlSqlTypeResults[index]; storedResult != "-" {
 			result := d.sqlType(*column)
