@@ -455,9 +455,9 @@ func doTestCount(assert *Assert) {
 			basic.State = 2
 			q.Save(basic)
 		}
-		count1 := q.Count("basic")
+		count1, _ := q.Count("basic")
 		assert.Equal(6, count1)
-		count2 := q.WhereEqual("state", 2).Count(basic)
+		count2, _ := q.WhereEqual("state", 2).Count(basic)
 		assert.Equal(5, count2)
 		return nil
 	})

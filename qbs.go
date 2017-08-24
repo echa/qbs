@@ -531,7 +531,8 @@ func (q *Qbs) Save(structPtr interface{}) (affected int64, err error) {
 	}
 	createdModelField := model.timeField("created")
 	var isInsert bool
-	if !model.pkZero() && q.WhereEqual(model.pk.name, model.pk.value).Count(model.table) > 0 { //id is given, can be an update operation.
+	cnt, err := q.WhereEqual(model.pk.name, model.pk.value).Count(model.table)
+	if !model.pkZero() && cnt > 0 { //id is given, can be an update operation.
 		affected, err = q.Dialect.update(q)
 	} else {
 		if createdModelField != nil {
@@ -674,7 +675,7 @@ func (q *Qbs) Close() error {
 
 //Query the count of rows in a table the table parameter can be either a string or struct pointer.
 //If condition is given, the count will be the count of rows meet that condition.
-func (q *Qbs) Count(table interface{}) int64 {
+func (q *Qbs) Count(table interface{}) (int64, error) {
 	quotedTable := q.Dialect.quote(tableName(table))
 	// add prefix if it does not already exist
 	if !strings.HasPrefix(quotedTable, q.schema) {
@@ -691,16 +692,58 @@ func (q *Qbs) Count(table interface{}) int64 {
 		row, err = q.QueryRow(query)
 	}
 	if err != nil {
-		return 0
+		return 0, err
 	}
 	var count int64
 	err = row.Scan(&count)
 	if err == sql.ErrNoRows {
-		return 0
+		return 0, nil
 	} else if err != nil {
 		q.updateTxError(err)
+		return 0, err
 	}
-	return count
+	return count, nil
+}
+
+func (q *Qbs) CountJoin(ptrOfSliceOfStructPtr interface{}) (int64, error) {
+	defer q.Reset()
+	strucType := reflect.TypeOf(ptrOfSliceOfStructPtr).Elem().Elem().Elem()
+	strucPtr := reflect.New(strucType).Interface()
+	q.criteria.model = structPtrToModel(strucPtr, !q.criteria.omitJoin, q.criteria.omitFields, q.schema)
+	table := q.Dialect.quote(q.criteria.model.table)
+	tables := []string{table}
+	// hasJoin := len(q.criteria.model.refs) > 0
+	for k, v := range q.criteria.model.refs {
+		tableAlias := StructNameToTableName(k)
+		quotedTableAlias := q.Dialect.quote(tableAlias)
+		quotedParentTable := q.Dialect.quote(v.model.table)
+		leftKey := table + "." + q.Dialect.quote(v.refKey)
+		parentPrimary := quotedTableAlias + "." + q.Dialect.quote(v.model.pk.name)
+		joinClause := fmt.Sprintf("LEFT JOIN %v AS %v ON %v = %v", quotedParentTable, quotedTableAlias, leftKey, parentPrimary)
+		tables = append(tables, joinClause)
+	}
+	query := "SELECT COUNT(*) FROM " + strings.Join(tables, " ")
+	var row *sql.Row
+	var err error
+	if q.criteria.condition != nil {
+		conditionSql, args := q.criteria.condition.Merge()
+		query += " WHERE " + conditionSql
+		row, err = q.QueryRow(query, args...)
+	} else {
+		row, err = q.QueryRow(query)
+	}
+	if err != nil {
+		return 0, err
+	}
+	var count int64
+	err = row.Scan(&count)
+	if err == sql.ErrNoRows {
+		return 0, nil
+	} else if err != nil {
+		q.updateTxError(err)
+		return 0, err
+	}
+	return count, nil
 }
 
 //Query raw sql and return a map.
