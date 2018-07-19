@@ -13,24 +13,33 @@ import (
 	"time"
 )
 
+// DEPRECATED: required for testcases; works with the legacy Register API
 var driver, driverSource, dbName string
-var dial Dialect
 var connectionLimit chan struct{}
 var blockingOnLimit bool
 var ConnectionLimitError = errors.New("Connection limit reached")
 var db *sql.DB
-var stmtMap map[string]*sql.Stmt
-var mu *sync.RWMutex
+var dial Dialect
+
+// defaults
 var queryLogger *log.Logger = log.New(os.Stdout, "qbs:", log.LstdFlags)
 var errorLogger *log.Logger = log.New(os.Stderr, "qbs:", log.LstdFlags)
-var schema string
+var defaultSchema string
+
+// default instance
+var q *Qbs
 
 type Qbs struct {
-	Dialect      Dialect
-	Log          bool //Set to true to print out sql statement.
-	schema       string
-	ctx          context.Context
+	sync.RWMutex
+	Dialect Dialect
+	Log     bool //Set to true to print out sql statement.
+
+	schema string
+	ctx    context.Context
+	db     *sql.DB
+
 	tx           *sql.Tx
+	stmtMap      map[string]*sql.Stmt
 	txStmtMap    map[string]*sql.Stmt
 	criteria     *criteria
 	firstTxError error
@@ -44,45 +53,58 @@ type Validator interface {
 
 // set a schema (supported by PostgreSQL)
 func SetDefaultSchema(s string) {
-	schema = strings.TrimSuffix(s, ".") + "."
+	defaultSchema = strings.TrimSuffix(s, ".") + "."
 }
 
 func GetDefaultSchema() string {
-	return schema
+	return defaultSchema
+}
+
+func SetDefaultLogger(query *log.Logger, err *log.Logger) {
+	queryLogger = query
+	errorLogger = err
+}
+
+func Connect(driver, url string, dialect Dialect) (*Qbs, error) {
+	database, err := sql.Open(driver, url)
+	if err != nil {
+		return nil, err
+	}
+	return ConnectWithDb(driver, database, dialect)
+}
+
+func ConnectWithDb(driver string, database *sql.DB, dialect Dialect) (*Qbs, error) {
+	database.SetMaxIdleConns(100)
+	return &Qbs{
+		Dialect: dialect,
+		schema:  defaultSchema,
+		db:      database,
+		stmtMap: make(map[string]*sql.Stmt),
+	}, nil
 }
 
 //Register a database, should be call at the beginning of the application.
-func Register(driverName, driverSourceName, databaseName string, dialect Dialect) {
-	driverSource = driverSourceName
-	dbName = databaseName
-	if db == nil {
-		var err error
-		var database *sql.DB
-		database, err = sql.Open(driverName, driverSource)
-		if err != nil {
-			panic(err)
-		}
-		RegisterWithDb(driverName, database, dialect)
+func Register(driverName, driverUrl, databaseName string, dialect Dialect) {
+	driver, driverSource, dbName, dial = driverName, driverUrl, databaseName, dialect
+	qbs, err := Connect(driver, driverUrl, dialect)
+	if err != nil {
+		return
 	}
-}
-
-func RegisterWithDb(driverName string, database *sql.DB, dialect Dialect) {
-	driver = driverName
-	dial = dialect
-	db = database
-	db.SetMaxIdleConns(100)
-	stmtMap = make(map[string]*sql.Stmt)
-	mu = new(sync.RWMutex)
+	q = qbs
 }
 
 //A safe and easy way to work with *Qbs instance without the need to open and close it.
 func WithQbs(task func(*Qbs) error) error {
-	q, err := GetQbs()
+	qbs, err := GetQbs()
 	if err != nil {
 		return err
 	}
-	defer q.Close()
-	return task(q)
+	defer func() {
+		if qbs.tx != nil {
+			qbs.Rollback()
+		}
+	}()
+	return task(qbs)
 }
 
 //Get an Qbs instance, should call `defer q.Close()` next, like:
@@ -96,55 +118,10 @@ func WithQbs(task func(*Qbs) error) error {
 //		...
 //
 func GetQbs() (q *Qbs, err error) {
-	return GetQbsContext(context.Background())
-}
-
-func GetQbsContext(ctx context.Context) (q *Qbs, err error) {
-	if driver == "" || dial == nil {
-		panic("database driver has not been registered, should call Register first.")
-	}
-	if connectionLimit != nil {
-		if blockingOnLimit {
-			select {
-			case <-ctx.Done():
-				return nil, ctx.Err()
-			case connectionLimit <- struct{}{}:
-			}
-		} else {
-			select {
-			case <-ctx.Done():
-				return nil, ctx.Err()
-			case connectionLimit <- struct{}{}:
-			default:
-				return nil, ConnectionLimitError
-			}
-		}
-	}
-	q = new(Qbs)
-	q.ctx = ctx
-	q.Dialect = dial
-	q.criteria = new(criteria)
-	q.schema = schema
-	q.queryLogger = queryLogger
-	q.errorLogger = errorLogger
 	return q, nil
 }
 
-func GetStats() sql.DBStats {
-	return db.Stats()
-}
-
-//The default connection pool size is 100.
-func ChangePoolSize(size int) {
-	db.SetMaxIdleConns(size)
-	db.SetMaxOpenConns(size)
-}
-
-func SetDefaultLogger(query *log.Logger, err *log.Logger) {
-	queryLogger = query
-	errorLogger = err
-}
-
+// DEPRECATED
 //Set the connection limit, there is no limit by default.
 //If blocking is true, GetQbs method will be blocked, otherwise returns ConnectionLimitError.
 func SetConnectionLimit(maxCon int, blocking bool) {
@@ -156,13 +133,38 @@ func SetConnectionLimit(maxCon int, blocking bool) {
 	blockingOnLimit = blocking
 }
 
-// set a schema (supported by PostgreSQL)
+// Creates a private Qbs instance that uses the specified context.
+func (q *Qbs) WithContext(ctx context.Context) *Qbs {
+	return &Qbs{
+		ctx:         ctx,
+		Dialect:     q.Dialect,
+		Log:         q.Log,
+		schema:      q.schema,
+		db:          q.db,
+		tx:          nil,
+		stmtMap:     make(map[string]*sql.Stmt),
+		txStmtMap:   nil,
+		queryLogger: q.queryLogger,
+		errorLogger: q.errorLogger,
+	}
+}
+
 func (q *Qbs) SetSchema(s string) {
 	q.schema = strings.TrimSuffix(s, ".") + "."
 }
 
 func (q *Qbs) GetSchema() string {
 	return q.schema
+}
+
+func (q *Qbs) GetStats() sql.DBStats {
+	return q.db.Stats()
+}
+
+//The default connection pool size is 100.
+func (q *Qbs) ChangePoolSize(size int) {
+	q.db.SetMaxIdleConns(size)
+	q.db.SetMaxOpenConns(size)
 }
 
 func (q *Qbs) SetLogger(query *log.Logger, err *log.Logger) {
@@ -178,17 +180,16 @@ func (q *Qbs) Reset() {
 // Begin create a transaction object internally
 // You can perform queries with the same Qbs object
 // no matter it is in transaction or not.
-// It panics if it's already in a transaction.
 func (q *Qbs) Begin() error {
 	return q.BeginTx(q.ctx, nil)
 }
 
 func (q *Qbs) BeginTx(ctx context.Context, opts *sql.TxOptions) error {
 	if q.tx != nil {
-		panic("cannot start nested transaction")
+		return fmt.Errorf("cannot start nested transaction")
 	}
 	q.ctx = ctx
-	tx, err := db.BeginTx(ctx, opts)
+	tx, err := q.db.BeginTx(ctx, opts)
 	if err != nil {
 		return err
 	}
@@ -487,21 +488,21 @@ func (q *Qbs) prepare(query string) (stmt *sql.Stmt, err error) {
 		}
 		q.txStmtMap[query] = stmt
 	} else {
-		mu.RLock()
-		stmt, ok = stmtMap[query]
-		mu.RUnlock()
+		q.RLock()
+		stmt, ok = q.stmtMap[query]
+		q.RUnlock()
 		if ok {
 			return
 		}
 
-		stmt, err = db.PrepareContext(q.ctx, query+";")
+		stmt, err = q.db.PrepareContext(q.ctx, query+";")
 		if err != nil {
 			q.updateTxError(err)
 			return
 		}
-		mu.Lock()
-		stmtMap[query] = stmt
-		mu.Unlock()
+		q.Lock()
+		q.stmtMap[query] = stmt
+		q.Unlock()
 	}
 	return
 }
@@ -520,7 +521,7 @@ func (q *Qbs) Save(structPtr interface{}) (affected int64, err error) {
 	}
 	model := structPtrToModel(structPtr, true, q.criteria.omitFields, q.schema)
 	if model.pk == nil {
-		panic("no primary key field")
+		return 0, fmt.Errorf("missing primary key field")
 	}
 	q.criteria.model = model
 	now := time.Now()
@@ -595,7 +596,7 @@ func (q *Qbs) BulkInsert(sliceOfStructPtr interface{}) error {
 		}
 		model := structPtrToModel(structPtrInter, false, nil, q.schema)
 		if model.pk == nil {
-			panic("no primary key field")
+			return fmt.Errorf("missing primary key field")
 		}
 		q.criteria.model = model
 		var id int64
@@ -616,7 +617,6 @@ func (q *Qbs) BulkInsert(sliceOfStructPtr interface{}) error {
 // temporary struct in function, only define the fields that should be updated.
 // But the temporary struct can not implement Validator interface, we have to validate values manually.
 // The update condition can be inferred by the Id value of the struct.
-// If neither Id value or condition are provided, it would cause runtime panic
 func (q *Qbs) Update(structPtr interface{}) (affected int64, err error) {
 	if v, ok := structPtr.(Validator); ok {
 		err := v.Validate(q)
@@ -628,19 +628,18 @@ func (q *Qbs) Update(structPtr interface{}) (affected int64, err error) {
 	q.criteria.model = model
 	q.criteria.mergePkCondition(q.Dialect)
 	if q.criteria.condition == nil {
-		panic("Can not update without condition")
+		return 0, fmt.Errorf("missing condition for update")
 	}
 	return q.Dialect.update(q)
 }
 
 // The delete condition can be inferred by the Id value of the struct
-// If neither Id value or condition are provided, it would cause runtime panic
 func (q *Qbs) Delete(structPtr interface{}) (affected int64, err error) {
 	model := structPtrToModel(structPtr, true, q.criteria.omitFields, q.schema)
 	q.criteria.model = model
 	q.criteria.mergePkCondition(q.Dialect)
 	if q.criteria.condition == nil {
-		panic("Can not delete without condition")
+		return 0, fmt.Errorf("missing condition for delete")
 	}
 	return q.Dialect.delete(q)
 }
@@ -664,13 +663,20 @@ func (q *Qbs) ContainsValue(table interface{}, column string, value interface{})
 
 // If the connection pool is not full, the Db will be sent back into the pool, otherwise the Db will get closed.
 func (q *Qbs) Close() error {
-	if connectionLimit != nil {
-		<-connectionLimit
-	}
+	// if connectionLimit != nil {
+	// 	<-connectionLimit
+	// }
 	if q.tx != nil {
 		return q.Rollback()
 	}
 	return nil
+}
+
+func (q *Qbs) CloseDB() error {
+	if err := q.Close(); err != nil {
+		return err
+	}
+	return q.db.Close()
 }
 
 //Query the count of rows in a table the table parameter can be either a string or struct pointer.
