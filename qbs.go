@@ -76,10 +76,11 @@ func Connect(driver, url string, dialect Dialect) (*Qbs, error) {
 func ConnectWithDb(driver string, database *sql.DB, dialect Dialect) (*Qbs, error) {
 	database.SetMaxIdleConns(100)
 	return &Qbs{
-		Dialect: dialect,
-		schema:  defaultSchema,
-		db:      database,
-		stmtMap: make(map[string]*sql.Stmt),
+		Dialect:  dialect,
+		schema:   defaultSchema,
+		db:       database,
+		criteria: &criteria{},
+		stmtMap:  make(map[string]*sql.Stmt),
 	}, nil
 }
 
@@ -141,6 +142,7 @@ func (q *Qbs) WithContext(ctx context.Context) *Qbs {
 		Log:         q.Log,
 		schema:      q.schema,
 		db:          q.db,
+		criteria:    &criteria{},
 		tx:          nil,
 		stmtMap:     make(map[string]*sql.Stmt),
 		txStmtMap:   nil,
