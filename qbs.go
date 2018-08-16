@@ -28,9 +28,39 @@ var defaultSchema string
 
 // default instance
 var qbs *Qbs
+var stmtCache = &sqlStmtCache{
+	stmtMap: make(map[string]*sql.Stmt),
+}
+
+// prepared statement cache
+type sqlStmtCache struct {
+	sync.RWMutex
+	stmtMap map[string]*sql.Stmt
+}
+
+func (c *sqlStmtCache) Get(q string) (stmt *sql.Stmt, ok bool) {
+	c.RLock()
+	defer c.RUnlock()
+	stmt, ok = c.stmtMap[q]
+	return
+}
+
+func (c *sqlStmtCache) Add(q string, s *sql.Stmt) {
+	c.Lock()
+	defer c.Unlock()
+	c.stmtMap[q] = s
+}
+
+func (c *sqlStmtCache) Clear() {
+	c.Lock()
+	defer c.Unlock()
+	for _, v := range c.stmtMap {
+		v.Close()
+	}
+	c.stmtMap = make(map[string]*sql.Stmt)
+}
 
 type Qbs struct {
-	sync.RWMutex
 	Dialect Dialect
 	Log     bool //Set to true to print out sql statement.
 
@@ -39,8 +69,8 @@ type Qbs struct {
 	db     *sql.DB
 
 	tx           *sql.Tx
-	stmtMap      map[string]*sql.Stmt
 	txStmtMap    map[string]*sql.Stmt
+	stmtCache    *sqlStmtCache
 	criteria     *criteria
 	firstTxError error
 	queryLogger  *log.Logger
@@ -76,11 +106,11 @@ func Connect(driver, url string, dialect Dialect) (*Qbs, error) {
 func ConnectWithDb(driver string, database *sql.DB, dialect Dialect) (*Qbs, error) {
 	database.SetMaxIdleConns(100)
 	return &Qbs{
-		Dialect:  dialect,
-		schema:   defaultSchema,
-		db:       database,
-		criteria: &criteria{},
-		stmtMap:  make(map[string]*sql.Stmt),
+		Dialect:   dialect,
+		schema:    defaultSchema,
+		db:        database,
+		criteria:  &criteria{},
+		stmtCache: stmtCache,
 	}, nil
 }
 
@@ -144,7 +174,7 @@ func (q *Qbs) WithContext(ctx context.Context) *Qbs {
 		db:          q.db,
 		criteria:    &criteria{},
 		tx:          nil,
-		stmtMap:     make(map[string]*sql.Stmt),
+		stmtCache:   q.stmtCache,
 		txStmtMap:   nil,
 		queryLogger: q.queryLogger,
 		errorLogger: q.errorLogger,
@@ -490,9 +520,7 @@ func (q *Qbs) prepare(query string) (stmt *sql.Stmt, err error) {
 		}
 		q.txStmtMap[query] = stmt
 	} else {
-		q.RLock()
-		stmt, ok = q.stmtMap[query]
-		q.RUnlock()
+		stmt, ok = q.stmtCache.Get(query)
 		if ok {
 			return
 		}
@@ -502,9 +530,7 @@ func (q *Qbs) prepare(query string) (stmt *sql.Stmt, err error) {
 			q.updateTxError(err)
 			return
 		}
-		q.Lock()
-		q.stmtMap[query] = stmt
-		q.Unlock()
+		q.stmtCache.Add(query, stmt)
 	}
 	return
 }
@@ -680,6 +706,7 @@ func (q *Qbs) CloseDB() error {
 	if err := q.Close(); err != nil {
 		return err
 	}
+	q.stmtCache.Clear()
 	return q.db.Close()
 }
 
