@@ -27,7 +27,7 @@ var errorLogger *log.Logger = log.New(os.Stderr, "qbs:", log.LstdFlags)
 var defaultSchema string
 
 // default instance
-var q *Qbs
+var qbs *Qbs
 
 type Qbs struct {
 	sync.RWMutex
@@ -87,25 +87,25 @@ func ConnectWithDb(driver string, database *sql.DB, dialect Dialect) (*Qbs, erro
 //Register a database, should be call at the beginning of the application.
 func Register(driverName, driverUrl, databaseName string, dialect Dialect) {
 	driver, driverSource, dbName, dial = driverName, driverUrl, databaseName, dialect
-	qbs, err := Connect(driver, driverUrl, dialect)
+	db, err := Connect(driver, driverUrl, dialect)
 	if err != nil {
 		return
 	}
-	q = qbs
+	qbs = db
 }
 
 //A safe and easy way to work with *Qbs instance without the need to open and close it.
 func WithQbs(task func(*Qbs) error) error {
-	qbs, err := GetQbs()
+	db, err := GetQbs()
 	if err != nil {
 		return err
 	}
 	defer func() {
-		if qbs.tx != nil {
-			qbs.Rollback()
+		if db.tx != nil {
+			db.Rollback()
 		}
 	}()
-	return task(qbs)
+	return task(db)
 }
 
 //Get an Qbs instance, should call `defer q.Close()` next, like:
@@ -118,8 +118,8 @@ func WithQbs(task func(*Qbs) error) error {
 //		defer q.Close()
 //		...
 //
-func GetQbs() (q *Qbs, err error) {
-	return q, nil
+func GetQbs() (*Qbs, error) {
+	return qbs, nil
 }
 
 // DEPRECATED
@@ -190,11 +190,11 @@ func (q *Qbs) BeginTx(ctx context.Context, opts *sql.TxOptions) error {
 	if q.tx != nil {
 		return fmt.Errorf("cannot start nested transaction")
 	}
-	q.ctx = ctx
 	tx, err := q.db.BeginTx(ctx, opts)
 	if err != nil {
 		return err
 	}
+	q.ctx = ctx
 	q.tx = tx
 	q.txStmtMap = make(map[string]*sql.Stmt)
 	return nil
@@ -671,6 +671,8 @@ func (q *Qbs) Close() error {
 	if q.tx != nil {
 		return q.Rollback()
 	}
+	q.tx = nil
+	q.firstTxError = nil
 	return nil
 }
 
